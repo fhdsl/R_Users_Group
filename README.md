@@ -1,3 +1,3 @@
 # R Users Group
 
-This repo hosts all Fred Hutch R Users Group presentation contents. 
+This repo hosts Fred Hutch R Users Group presentation contents. 
