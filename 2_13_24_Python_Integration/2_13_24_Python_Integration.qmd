@@ -1,0 +1,189 @@
+---
+title: "2_13_24_Python_Integration"
+format: html
+editor: visual
+---
+
+## Software environments
+
+> An environment refers to all the software packages and versions that you currently have access to. Usually this is whatever is available on the main path of your computer which is referred to as the *global* or *system* environment. However there are several advantages to maintaining more control over the environment you are using.
+>
+> Imagine you are using a software tool which depends on **pkg v1**. What if you want to install another tool that depends on **pkg v2**? You could either update **pkg** which means the first tool would stop working or keep the current version and not be able to use the second tool. This is the problem that environment managers try to solve by allowing you to create isolated environments with specific package versions installed. This means we could have an environment with **pkg v1** installed for the first tool and switch to another environment with **pkg v2** installed when we want to use the second tool.
+
+\- from [scanpy tutorial](https://theislab.github.io/scanpy-in-R/)
+
+Common software environment managers are `conda`**,** `virtualenv` for Python, and `renv` for R. We will use `renv` for our R software environment manager, and it has an option to connect to a Python software environment.
+
+```{r}
+renv::init()
+renv::use_python()
+```
+
+#### Installing a Python library in the current Python environment
+
+```{r}
+library(reticulate)
+py_install("pandas")
+```
+
+## R and Python interplay
+
+```{r}
+r_vector = c(1, 2, 3, 4)
+```
+
+We can run Python REPL using a `{python}` code chunk in Quarto and R Markdown documents. It can access our R environment under the `r` object.
+
+```{python}
+import os
+os.listdir()
+
+r.r_vector
+
+python_list = [1, 2, "hello", True]
+python_list[0]
+```
+
+Back to R environment. We can access variables and functions in the Python environment via the list-like variable `py` .
+
+```{r}
+class(py)
+
+py$python_list
+py$python_list[[1]]
+py$os$listdir()
+
+```
+
+Or, we can import Python modules directly in R without enter Python REPL.
+
+```{r}
+os <- import("os")
+os$listdir()
+```
+
+Or even source Python scripts:
+
+```{r}
+source_python('script.py')
+my_adder(2, -10)
+```
+
+Lastly, we can have one-liners into Python from R:
+
+```{r}
+py_eval("os.listdir()")
+```
+
+## Type conversion between R and Python
+
+Conversion table [here](https://rstudio.github.io/reticulate/articles/calling_python.html#type-conversions).
+
+#### R to Python: vectors, lists, matricies, data.frames
+
+```{r}
+r_vector = c(1, 2, 3, 4)
+r_list = list(first = c(1, 2, 3), second = "second", third = c(TRUE, FALSE))
+r_matrix = matrix(1:10, nrow = 2, ncol = 5)
+r_dataframe = iris
+```
+
+```{python}
+import pandas as pd
+import numpy as np
+r.r_vector
+type(r.r_vector)
+
+r.r_list
+type(r.r_list)
+
+r.r_matrix
+type(r.r_matrix)
+
+r.r_dataframe
+type(r.r_dataframe)
+```
+
+**Python to R:**
+
+```{python}
+python_list = [1, 2, 3, 4]
+python_mixed_list = [1, 2, "hello", True]
+python_tuple = ("apple", "banana", "cherry", "apple", "cherry")
+python_mixed_tuple = (True, 121, "cherry", "apple", "cherry")
+python_dictionary = {
+  "name": "Chris",
+  "job": "Teacher",
+  "year": 2024
+}
+python_np_array = np.array([[1, 2], [3, 4]])
+data = {'names': ['taylor', 'howard', 'chris', 'hank', 'fuzz'],
+        'value': [1200, 150, 300, 450, 200]
+        }
+python_pd = pd.DataFrame(data)
+```
+
+```{r}
+class(py$python_list)
+py$python_list
+
+class(py$python_mixed_list)
+py$python_mixed_list
+
+class(py$python_tuple)
+py$python_tuple
+
+class(py$python_mixed_tuple)
+py$python_mixed_tuple
+
+class(py$python_dictionary)
+py$python_dictionary
+
+class(py$python_np_array)
+py$python_np_array
+
+class(py$python_pd)
+py$python_pd
+```
+
+## `scanpy` integration in R
+
+Install required python packages.
+
+```{r}
+library(tidyverse)
+
+py_pkgs <- c(
+    "scanpy",
+    "python-igraph",
+    "louvain"
+)
+reticulate::py_install(py_pkgs)
+
+```
+
+```{python}
+import scanpy as sc
+adata = sc.datasets.pbmc3k_processed()
+sc.pl.umap(adata, color='louvain')
+adata.obs
+```
+
+Alternatively, you can do it directly in R:
+
+```{r}
+sc <- import("scanpy")
+adata <- sc$datasets$pbmc3k_processed()
+sc$pl$umap(adata, color='louvain')
+adata
+```
+
+More analysis in R.
+
+```{r}
+head(py$adata$obs)
+ggplot(py$adata$obs, aes(x = n_counts, y = n_genes, colour = louvain)) +
+    geom_point()
+```
+
+More from the tutorial [here](https://theislab.github.io/scanpy-in-R).

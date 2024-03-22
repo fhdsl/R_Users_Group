@@ -1,0 +1,253 @@
+---
+title: "Loops and Vecotrization"
+format: html
+editor: visual
+---
+
+```{r, echo=F, message=F, warning=F}
+library(tidyverse)
+library(bench)
+```
+
+## Loops and Vectorization
+
+Today, we will try to answer:
+
+-   Are loops in R slow?
+
+-   What is "vectorization", and why is it faster?
+
+-   How does this relate to functional programming?
+
+## Loops
+
+```         
+for (item in vector) {
+  perform action
+}
+```
+
+Some pitfalls of improper for-loop usage in R:
+
+-   If you modify an *entire* data structure within the loop, each modification may generate multiple copies of the data structure, which slows down the loop.
+-   Similarly, you should avoid growing an object with a loops. When you use `c()`, `append()`, `cbind()`, `rbind()`, or `paste()` commands to create a bigger object, R must allocate space for the new object and copy the old object to its new home. Instead, pre-allocate the space you need first.
+-   You should use `seq_long(x)` instead of `1:length(x)` to create the vector, as weird things happen when the vector length is 0.
+
+Example of best practice:
+
+```{r}
+x <- 1:10
+z <- numeric(length(x))
+for(i in seq_along(x)) {
+      z[i] <- 2 * x[i] 
+}
+z
+```
+
+Example of modifying an *entire* data structure within the loop:
+
+```{r}
+x = data.frame(matrix(runif(5 * 1e4), ncol = 5))
+for (i in seq_along(ncol(x))) {
+  x[[i]] = x[[i]] - mean(x[[i]])
+}
+```
+
+## Vectorization
+
+With an understanding of loops, let's look compare two methods of adding two vectors together. Call the first one the **vectorized method**, which we are used to doing.
+
+```{r}
+x <- 1:4
+y <- 6:9 
+z <- x + y
+z
+```
+
+The second way makes use of our **looping method**:
+
+```{r}
+z <- numeric(length(x))
+for(i in seq_along(x)) {
+      z[i] <- x[i] + y[i]
+}
+z
+```
+
+Is there fundamentally a difference between the two methods? The answer is *yes*.
+
+Let's formally benchmark it.
+
+```{r}
+N = 100000
+x <- rep(1, N)
+y <- rep(1, N)
+z <- x + y
+
+add_loop = function(x, y) {
+  z <- numeric(length(x))
+  for(i in seq_along(x)) {
+        z[i] <- x[i] + y[i]
+  }
+  z
+}
+
+bench::mark(x + y,
+            add_loop(x, y))
+
+```
+
+It turns out the first way is *much* faster than the second one. It is because the vectorized operation `+` for vectors is optimized to be much faster than using `+` for simple data types in a loop. We need a bit more background to understand why.
+
+## What's R doing when you run it?
+
+Remember, when you program in R, it is a series of translations:
+
+**English \<-\> Programming Code for Interpreter \<-\> Machine Code for Central Processing Unit (CPU)**
+
+R is a high-level, interpreted language. That means the R console has to translate your programming code into machine code on the fly as you interact with the console or run scripts.
+
+In contrast, a lower level language such as C++ will translate (*compile)* the entire programming code into machine code before you can execute your code, and it is a highly optimized process.
+
+Some things that needs to be done in the translation process for R, but not compiled C++ code:
+
+-   Find and allocate memory for variables that are generated live
+
+-   Determine the data type
+
+-   Convert code into machine code
+
+But we are just working with R here, right? So why are we comparing other lower level languages into the story? Well, many operations and functions in R call compiled languages from C, C++, and FORTRAN.
+
+If you look at the source or documentation of these functions, you will see `.Internal`, `.C`, `.Primitive`, or `.Call` in it. That means R is calling compiled code from another language to run it.
+
+Returning back to our two methods of adding two vectors together:
+
+-   In the **looping method**, when `+` is called for a data type, it has to "figure out" stuff out at each step of the iteration: it has to access a specific element of a vector, figure out what data types are being added together for each iteration of the loop, and store it in a specific location.
+
+-   In the **vectorized method**, when `+` is used for vectors, it calls a compiled function that has an optimized for-loop addition for numerical vectors. The compiled function has already "figured out" all it needed when it was compiled, and it can just run once.
+
+Other common vectorized operations we use: arithmetic operations, comparison operators.
+
+Common vectorized functions: `colSum()`, `rowSum()`
+
+Due to the fact that things will run faster on pre-compiled, vectorized functions, Noam Ross notices the R style of code:
+
+> If you can express what you want to do in R in a line or two, with just a few function calls that are actually calling compiled code, it'll be more efficient than if you write long program, with the added overhead of many function calls. This is not the case in all other languages. Often, in compiled languages, you want to stick with lots of very simple statements, because that allows the compiler to figure out the most efficient translation of the code.
+
+One more example to illustrate this.
+
+Looping method:
+
+```{r}
+N <- 1000
+x <- 1:N
+
+lsum <- 0
+for(i in 1:length(x)) {
+  lsum <- lsum + log(x[i])
+}
+```
+
+Vectorizing method:
+
+```{r}
+lsum <- sum(log(x))
+```
+
+Benchmark the two:
+
+```{r}
+N <- 10000
+x <- 1:N
+
+sum_log_loop = function(x) {
+  lsum <- 0
+  for(i in 1:length(x)) {
+    lsum <- lsum + log(x[i])
+  }
+  lsum
+}
+
+bench::mark(sum(log(x)),
+            sum_log_loop(x))
+```
+
+### Other ways to speed up your code
+
+**Parallelize your code**
+
+If you have a multi-core machine, you can easily speed up your `purrr::map` calls by replacing them with the `furrr` package, which will help parallize your tasks.
+
+**Writing your functions in C++ via Rcpp**
+
+To effectively repeat processes in R, you need to optimize it in in a compiled language. Essentially, this means calling a function that runs its loops in C rather than R code. The package **`Rcpp`** can compile C++ code to be used in R.
+
+## Functionals
+
+A **functional** is a function that takes a data structure and function as inputs and applies the function on the data structure, element by element. It encourages the usage of modular functions in your code, but because the input function is arbitrary (ie. it might not be a vectorized function), there is no guarantees in improving your code's performance. It also discourages the common mistakes used in for-loops (ie. not pre-allocating memory). You should use functionals for clarity and style, not for performance.
+
+`sapply()` takes in a vector, and then applies the function on each element of it.
+
+```{r}
+x = 1:10
+sapply(x, log)
+```
+
+You can do this via the `map_*` function in the `purrr` package, where `*` specifies the output type. By default `map()` gives a list.
+
+```{r}
+purrr::map_dbl(x, log)
+```
+
+```{r}
+N = 100
+M = 1000
+x = matrix(rep(1, N*M), nrow = N, ncol = M)
+
+rowSums(x)
+
+apply(x, 1, sum)
+
+loopy = function(x) {
+  result = rep(NA, nrow(x))
+  for(m in 1:nrow(x)) {
+    result[m] = sum(x[m ,])
+  }
+  result
+}
+
+loopy_bad = function(x) {
+  result = NA
+  for(m in 1:nrow(x)) {
+    result = c(result, sum(x[m ,]))
+  }
+  result[-1]
+}
+
+bench::mark(rowSums(x), 
+            apply(x, 1, sum),
+            loopy(x), 
+            loopy_bad(x))
+
+analysis =  bench::press(N = 100,
+                         M = c(1000, 10000, 100000),
+                         {
+                           x = matrix(rep(1, N*M), nrow = N, ncol = M)
+                           bench::mark(rowSums(x), 
+                                       apply(x, 1, sum),
+                                       loopy(x))
+                         })
+
+
+ggplot2::autoplot(analysis)
+
+```
+
+## References
+
+-   Advanced R by Hadley Wickham
+
+-   R Inferno by Kevin Burns
+
+-   https://www.noamross.net/archives/2014-04-16-vectorization-in-r-why/
