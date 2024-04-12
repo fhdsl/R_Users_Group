@@ -35,7 +35,7 @@ To do this functionally, we think about:
 
 -   The repeated task as a function: `read_csv()`
 
--   A function to facilitate the looping mechanism: `map()`.
+-   The looping mechanism, and its output: `map()` outputs lists.
 
 It's this easy:
 
@@ -86,10 +86,13 @@ library(palmerpenguins)
 library(tidyverse)
 head(penguins)
 
-for(current_species in c("Adelie", "Chinstrap", "Gentoo")) {
-  penguins_subset = filter(penguins, species == current_species)
-  print(mean(penguins_subset$bill_length_mm, na.rm=TRUE))
+species_to_analyze = c("Adelie", "Chinstrap", "Gentoo")
+outcome = rep(NA, length(species_to_analyze))
+for(i in seq_along(species_to_analyze)) {
+  penguins_subset = filter(penguins, species == species_to_analyze[i])
+  outcome[i] = mean(penguins_subset$bill_length_mm, na.rm=TRUE)
 }
+outcome
 ```
 
 Functionally:
@@ -115,10 +118,11 @@ sapply(c("Adelie", "Chinstrap", "Gentoo"), analysis)
 ```{r}
 penguins_numeric = penguins %>% select(bill_length_mm, bill_depth_mm, flipper_length_mm, body_mass_g)
 
-for(col_name in names(penguins_numeric)) {
-  col_vector = unlist(select(penguins_numeric, col_name))
-  print(mean(col_vector, na.rm = TRUE))
+result = rep(NA, ncol(penguins_numeric))
+for(i in seq_along(penguins_numeric)) {
+  result[i] = mean(penguins_numeric[[i]], na.rm = TRUE)
 }
+result
 ```
 
 Functionally:
@@ -159,3 +163,5 @@ lapply(penguins_numeric, function(x) mean(x, na.rm = TRUE))
 ## References
 
 [Advanced R](https://adv-r.hadley.nz/functionals.html)
+
+[Purrr vs. Apply discussion](https://stackoverflow.com/questions/45101045/why-use-purrrmap-instead-of-lapply)

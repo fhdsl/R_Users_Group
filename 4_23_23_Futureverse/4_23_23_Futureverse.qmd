@@ -1,0 +1,173 @@
+---
+title: "Futureverse"
+format: html
+editor: visual
+---
+
+## Functionals review
+
+A **functional** is a function, such as `map()`, that takes a data structure and function as inputs and applies the function on the data structure, element by element. It encourages the usage of modular functions in your code. You should use functionals for clarity and style, not necessary for performance (yet).
+
+Below is a visualization of what `map()` is doing.
+
+![](https://upload.wikimedia.org/wikipedia/commons/0/06/Mapping-steps-loillibe-new.gif)
+
+Or,
+
+![](https://d33wubrfki0l68.cloudfront.net/f0494d020aa517ae7b1011cea4c4a9f21702df8b/2577b/diagrams/functionals/map.png){width="250"}
+
+### Example: loading data in
+
+```{r, message=F, warning=F}
+library(tidyverse)
+library(tictoc)
+
+paths = c("/Users/clo2/Documents/R_Users_Group/4_23_23_Futureverse/students.csv", "/Users/clo2/Documents/R_Users_Group/4_23_23_Futureverse/students2.csv")
+
+loaded_dfs = map(paths, read_csv)
+```
+
+### Can we make this faster?
+
+Ways of running our task:
+
+-   Sequential
+
+-   **Multi-threading** (multisession, multicore - forked processes)
+
+-   Multi-processing (cluster)
+
+-   GPUs...
+
+The latter are easiest when the tasks are *independent* of each other.
+
+## Multi-threading with `furrr` package
+
+We have to plan out what kind of parallel compute we want to use, and then replace `map()` with `future_map()`.
+
+```{r, message=F, warning=F}
+library(furrr)
+
+plan(multisession, workers = 2)
+
+loaded_dfs = future_map(paths, read_csv)
+```
+
+If you prefer the `apply` family of functions, consider `future_lapply()`, or `mclapply()`.
+
+To better understand what is going on, we need to look at the `futures` package, which is what `furrr` package is calling.
+
+## Doing two things at the same time: `futures` package
+
+Suppose we have a slow task, and we want to run it twice.
+
+```{r}
+slow_sum <- function(x) {
+  sum <- 0
+  
+  for (value in x) {
+    Sys.sleep(1.0)  ## one-second slowdown per value
+    sum <- sum + value
+  }
+  
+  sum
+}
+```
+
+```{r}
+tic()
+y1 <- slow_sum(1:10)
+y2 <- slow_sum(11:20)
+toc()
+```
+
+Wouldn\'t it be great if we could run these two tasks concurrently?
+
+```{r}
+plan(multisession, workers = 2) 
+
+tic()
+y1 %<-% slow_sum(1:10)
+y2 %<-% slow_sum(11:20)
+toc()
+
+tic()
+y1
+toc()
+
+tic()
+y2
+toc()
+```
+
+The `%<-%` assignment operator works by launching `slow_sum(1:10)` in the background, preparing to assign the result to `y1` when its done, and then returning immediately. So you see the elapsed time for defining `y1` and `y2` is minimal, but to *access* the values of `y1` and `y2` takes a while. This is where we wait, but the wait time is about half, because they are run in two different cores.
+
+The name `futures` makes sense, because you are starting a process so that in the future you can access it.
+
+> *future* is an abstraction for a *value* that may be available at some point in the future. The state of a future can either be *unresolved* or *resolved*. As soon as it is resolved, the value is available instantaneously. If the value is queried while the future is still unresolved, the current process is *blocked* until the future is resolved. -Henrik Bengtsson, author of `futures`.
+
+Let's look at a more fine-tuned way of using `futures`.
+
+## Explicit futures
+
+-   `f <- future(expr)` : evaluates an expression via a future (non-blocking, if possible)
+
+    -   `f` is an object of `Future` class.
+
+    -   If we had used `y1 %<-% expr(...)`, `y1` is a data that may be blocked.
+
+-   `r <- resolved(f)` : TRUE if future is resolved, otherwise FALSE (non-blocking)
+
+-   `v <- value(f)` : the value of the future expression expr (blocking until resolved)
+
+Looking back at our example:
+
+```{r}
+plan(multisession, workers = 2) 
+
+f1 <- future(slow_sum(1:10))
+f2 <- future(slow_sum(11:20))
+
+resolved(f1)
+
+## We are free to do whatever we want while future is running, e.g.
+z <- sd(rnorm(100, 0, 1))
+
+resolved(f1)
+y1 <- value(f1)
+resolved(f1)
+resolved(f2)
+y2 <- value(f2)
+resolved(f2)
+```
+
+If we launch more futures than we have workers, then we are blocked.
+
+```{r}
+plan(multisession, workers = 2) 
+
+f1 <- future(slow_sum(1:10))
+f2 <- future(slow_sum(11:20))
+f3 <- future(slow_sum(11:20))
+```
+
+## On planning your resources
+
+How many cores can you use?
+
+```{r}
+availableCores()
+
+```
+
+Chunking strategies: https://furrr.futureverse.org/articles/chunking.html
+
+## Multi-Processing at Fred Hutch
+
+Has anyone gotten futures to work on FH HPC?
+
+rCromwell - https://getwilds.org/rcromwell/articles/rcromwell.html
+
+## References
+
+https://henrikbengtsson.github.io/course-stanford-futureverse-2023/
